@@ -1,6 +1,7 @@
 import asyncio
 import html
 import os
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -77,11 +78,22 @@ def photo_path(photo_key: Optional[str]) -> Optional[Path]:
 
 
 async def send_screen(message: Message, text: str, keyboard=None, photo_key: Optional[str] = None):
+    """Send a screen and never break the scenario only because a local photo failed."""
     path = photo_path(photo_key)
     if path:
-        await message.answer_photo(photo=FSInputFile(path), caption=text, reply_markup=keyboard)
-    else:
-        await message.answer(text, reply_markup=keyboard)
+        try:
+            # Telegram photo captions are shorter than normal messages.
+            # If a future text becomes too long, send photo and text separately.
+            if len(text) <= 1000:
+                await message.answer_photo(photo=FSInputFile(path), caption=text, reply_markup=keyboard)
+            else:
+                await message.answer_photo(photo=FSInputFile(path))
+                await message.answer(text, reply_markup=keyboard)
+            return
+        except Exception as exc:
+            logging.exception("Failed to send photo %s: %s", path, exc)
+    # Fallback: the flow must continue even when an image is missing/broken/too large.
+    await message.answer(text, reply_markup=keyboard)
 
 
 async def edit_or_send(query: CallbackQuery, text: str, keyboard=None, photo_key: Optional[str] = None):
@@ -140,11 +152,17 @@ async def main():
     @dp.message(CommandStart())
     async def start(message: Message, state: FSMContext):
         await state.clear()
-        await send_screen(message, content.WELCOME, photo_key="PHOTO_WELCOME")
+
+        # IMPORTANT: WELCOME + 1.png belong to Telegram Bot Intro and are configured
+        # in BotFather. They are intentionally NOT sent again after /start.
         await send_screen(message, content.HOME_INTRO, photo_key="PHOTO_HOME_INTRO")
+
         await asyncio.sleep(3)
-        await send_screen(message, content.MINI_PRESENTATION, photo_key="PHOTO_PRESENTATION")
-        await show_home(message)
+        try:
+            await send_screen(message, content.MINI_PRESENTATION, photo_key="PHOTO_PRESENTATION")
+        finally:
+            # Even if presentation media has a problem, always show the main menu.
+            await show_home(message)
 
     @dp.callback_query(F.data == "home")
     async def cb_home(q: CallbackQuery, state: FSMContext):

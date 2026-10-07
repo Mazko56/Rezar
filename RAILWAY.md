@@ -1,36 +1,28 @@
-# REZAR Bot — Railway
+# Railway — REZAR Bot
 
-## 1. Загрузка фото
+## Обновление проекта
 
-Фото складывать в папку:
+После замены файлов в `C:\REZAR`:
 
-```text
-assets/
-```
-
-с именами `1.png`, `2.png`, `3.png` ... `16.png`.
-
-После добавления фото сделать:
-
-```bash
+```bat
+cd /d C:\REZAR
 git add .
-git commit -m "Add bot images"
+git commit -m "Fix start flow and presentation"
 git push
 ```
 
-## 2. Deploy на Railway
+Railway автоматически сделает новый deploy.
 
-1. `New Project`
-2. `Deploy from GitHub Repo`
-3. выбрать репозиторий `Mazko56/Rezar`
-4. дождаться первой сборки
+## Start Command
 
-## 3. Variables
+```bash
+python -m app.main
+```
 
-Добавить минимум:
+## Variables
 
 ```text
-BOT_TOKEN=ваш_токен_бота
+BOT_TOKEN=...
 MANAGER_USERNAME=rezar_auto1
 CHANNEL_INVITE=https://t.me/+Lr5L8xRGZa9kZGRi
 CHAT_INVITE=https://t.me/+YuRmEjW__dplMTZi
@@ -38,30 +30,17 @@ MISE_PYTHON_GITHUB_ATTESTATIONS=false
 NIXPACKS_PYTHON_VERSION=3.12
 ```
 
-## 4. Start Command
+## Фото
 
-Если Railway не определит сам, указать:
+`2.png`-`16.png` должны лежать в репозитории в папке `assets/`.
 
-```bash
-python -m app.main
-```
+`1.png` используется для стартового Intro до нажатия «Розпочати» и устанавливается через BotFather → `/mybots` → бот → Edit Bot → Edit Description Picture / Edit Intro Media.
 
-## 5. Важно про экран до Start
+## Проверка
 
-То, что пользователь видит до нажатия `Розпочати`, задаётся не кодом, а через BotFather:
+После deploy открыть новый тестовый аккаунт Telegram, который ещё не запускал бота:
 
-- `/setdescription`
-- `/setabouttext`
-- `/setuserpic`
-
-## 6. Обновления
-
-После любых изменений:
-
-```bash
-git add .
-git commit -m "Update REZAR bot"
-git push
-```
-
-Railway сам сделает redeploy.
+1. до Start должен отображаться Intro с `1.png`;
+2. после Start приходит `2.png` + текст;
+3. через 3 секунды приходит `3.png` + презентация;
+4. затем сразу приходит отдельное сообщение с главным меню и кнопками.
