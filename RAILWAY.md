@@ -1,46 +1,43 @@
-# Railway — REZAR Bot
+# Railway deploy
 
-## Обновление проекта
+## 1. Репозиторий
 
-После замены файлов в `C:\REZAR`:
+Проект пушится в GitHub, потом подключается в Railway через `Deploy from GitHub Repo`.
 
-```bat
-cd /d C:\REZAR
-git add .
-git commit -m "Fix start flow and presentation"
-git push
-```
+## 2. Variables
 
-Railway автоматически сделает новый deploy.
-
-## Start Command
-
-```bash
-python -m app.main
-```
-
-## Variables
+Добавить в Railway:
 
 ```text
-BOT_TOKEN=...
+BOT_TOKEN=ваш_токен_бота
 MANAGER_USERNAME=rezar_auto1
 CHANNEL_INVITE=https://t.me/+Lr5L8xRGZa9kZGRi
 CHAT_INVITE=https://t.me/+YuRmEjW__dplMTZi
 MISE_PYTHON_GITHUB_ATTESTATIONS=false
 NIXPACKS_PYTHON_VERSION=3.12
+HAPPYCAR_ID=
+HAPPYCAR_PASSWORD=
+DUOCAR_ID=
+DUOCAR_PASSWORD=
+JENO_ID=
+JENO_PASSWORD=
+GLOVIS_LOGIN=
+GLOVIS_PASSWORD=
 ```
 
-## Фото
+## 3. Start Command
 
-`2.png`-`16.png` должны лежать в репозитории в папке `assets/`.
+Если Railway не определит автоматически:
 
-`1.png` используется для стартового Intro до нажатия «Розпочати» и устанавливается через BotFather → `/mybots` → бот → Edit Bot → Edit Description Picture / Edit Intro Media.
+```bash
+python -m app.main
+```
 
-## Проверка
+## 4. Фото
 
-После deploy открыть новый тестовый аккаунт Telegram, который ещё не запускал бота:
+Фото загружать в папку `assets/`, потом делать push в GitHub.
 
-1. до Start должен отображаться Intro с `1.png`;
-2. после Start приходит `2.png` + текст;
-3. через 3 секунды приходит `3.png` + презентация;
-4. затем сразу приходит отдельное сообщение с главным меню и кнопками.
+## 5. Экран до Start
+
+Экран до `Розпочати` задаётся через `@BotFather`, а не кодом.
+Использовать `assets/1.png`.
