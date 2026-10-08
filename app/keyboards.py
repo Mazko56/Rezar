@@ -5,7 +5,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
-BTN_GET = "🚘 Отримати варіанти\nавто"
+BTN_GET = "🚘 Підібрати авто"
 BTN_CALC = "🧮 Розрахувати\nпід ключ"
 BTN_KOREA = "🇰🇷 Чому авто\nз Кореї?"
 BTN_MANAGER = "👨‍💼 Зв’язок з\nменеджером"
@@ -51,7 +51,6 @@ def main_menu_kb():
 def intro_prompt_kb():
     return _reply([
         [KeyboardButton(text="🇰🇷 А чому Корея?"), KeyboardButton(text="👨‍💼 Зв'язок з менеджером")],
-        [KeyboardButton(text="🔐 Безкоштовні доступи до аукціонів")],
     ], placeholder="Напишіть свої побажання по авто...")
 
 
@@ -89,23 +88,19 @@ def result_nav_kb():
 
 def korea_bottom_kb():
     return _reply([
-        [KeyboardButton(text=BTN_GET), KeyboardButton(text=BTN_CALC)],
-        [KeyboardButton(text="🔐 Доступи до аукціонів"), KeyboardButton(text="👨‍💼 Менеджер")],
-    ])
-
-
-def korea_last_bottom_kb():
-    return _reply([
-        [KeyboardButton(text=BTN_GET), KeyboardButton(text=BTN_CALC)],
         [KeyboardButton(text=BTN_MENU), KeyboardButton(text="👨‍💼 Менеджер")],
     ])
 
 
+def korea_last_bottom_kb():
+    return korea_bottom_kb()
+
+
 def budget_kb():
     return _reply([
-        [KeyboardButton(text="до 15.000"), KeyboardButton(text="15.000–20.000")],
-        [KeyboardButton(text="20.000–30.000"), KeyboardButton(text="30.000–40.000")],
-        [KeyboardButton(text="40.000–50.000"), KeyboardButton(text="50.000+")],
+        [KeyboardButton(text="до 15.000 $"), KeyboardButton(text="15.000–20.000 $")],
+        [KeyboardButton(text="20.000–30.000 $"), KeyboardButton(text="30.000–40.000 $")],
+        [KeyboardButton(text="40.000–50.000 $"), KeyboardButton(text="50.000+ $")],
         [KeyboardButton(text=BTN_MENU), KeyboardButton(text=BTN_BACK), KeyboardButton(text="👨‍💼 Менеджер")],
     ])
 
@@ -122,17 +117,20 @@ def purchase_kb():
 
 def korea_page1_kb():
     return inline_rows([
-        [("⬅️ Назад", "korea:home"), ("Дізнатись більше ➡️", "korea:2")],
+        [("⬅️ Назад", "korea:home")],
+        [("Дізнатись більше ➡️", "korea:2")],
     ])
 
 
 def korea_page2_kb():
     return inline_rows([
-        [("⬅️ Назад", "korea:home"), ("Дізнатись більше ➡️", "korea:3")],
+        [("⬅️ Назад", "korea:home")],
+        [("Дізнатись більше ➡️", "korea:3")],
     ])
 
 
 def korea_page3_kb():
     return inline_rows([
-        [("⬅️ Назад", "korea:home"), ("Чому саме Rezar? ➡️", "korea:4")],
+        [("⬅️ Назад", "korea:home")],
+        [("Чому саме Rezar? ➡️", "korea:4")],
     ])

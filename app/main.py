@@ -195,7 +195,7 @@ async def main():
     async def menu_handler(message: Message, state: FSMContext):
         await show_home(message, state)
 
-    @dp.message(F.text.in_({BTN_GET, BTN_CALC}))
+    @dp.message(F.text.in_({BTN_GET, BTN_CALC, "🚘 Отримати варіанти\nавто", "🚘 Отримати варіанти авто"}))
     async def main_quiz_sections(message: Message, state: FSMContext):
         source = "calc" if message.text == BTN_CALC else "pick"
         await start_quiz(message, state, source)
@@ -228,7 +228,7 @@ async def main():
         await message.answer(content.BUDGET_PROMPT, reply_markup=budget_kb())
         
 
-    @dp.message(QuizFlow.budget, F.text.in_({"до 15.000", "15.000–20.000", "20.000–30.000", "30.000–40.000", "40.000–50.000", "50.000+"}))
+    @dp.message(QuizFlow.budget, F.text.in_({"до 15.000 $", "15.000–20.000 $", "20.000–30.000 $", "30.000–40.000 $", "40.000–50.000 $", "50.000+ $"}))
     async def budget_selected(message: Message, state: FSMContext):
         await state.update_data(budget=message.text)
         await state.set_state(QuizFlow.purchase_time)
