@@ -131,7 +131,9 @@ async def quiz_question(message: Message, person: dict):
     elif stage == "year":
         await message.answer(content.YEAR_QUESTION, reply_markup=kb.year_kb())
     elif stage == "budget":
-        await send_dual_controls(message, content.BUDGET_QUESTION, kb.budget_bottom_kb(), kb.budget_kb())
+        # Reply-клавіатура бюджету завжди з'являється. Ніякого edit_reply_markup,
+        # через який шість варіантів не відображалися в Telegram.
+        await message.answer(content.BUDGET_QUESTION, reply_markup=kb.budget_kb())
     elif stage == "contact":
         if person.get("phone"):
             storage.update(message.chat.id, stage="preferred")
@@ -238,29 +240,33 @@ async def handle_text(message: Message):
     text = message.text.strip()
 
     # Константні кнопки під СВ працюють у всіх розділах.
-    if text in (kb.MENU,):
+    if text in (kb.MENU, "меню"):
         await main_menu(message)
         return
-    if text in (kb.PICK,):
+    if text in (kb.PICK, "Підібрати авто"):
         await begin_quiz(message, user_id, "pick")
         return
-    if text in (kb.CALC,):
+    if text in (kb.CALC, "Розрахувати під ключ"):
         await begin_quiz(message, user_id, "calc")
         return
-    if text in (kb.KOREA, kb.KOREA_SHORT):
+    if text in (kb.KOREA, kb.KOREA_SHORT, "Чому авто з Кореї?", "а чому з Кореї?"):
         await show_korea(message, user_id, 1)
         return
-    if text in (kb.MANAGER, kb.SHORT_MANAGER):
+    if text in (kb.MANAGER, kb.SHORT_MANAGER, "Зв’язок з менеджером", "менеджер"):
         await show_manager(message, user_id)
         return
-    if text in (kb.ACCESS, kb.ACCESS_SHORT, "аукціони"):
+    if text in (kb.ACCESS, kb.ACCESS_SHORT, kb.AUCTIONS, "аукціони", "Безкоштовні доступи до аукціонів", "доступи до аукціонів"):
         await open_access(message, user_id)
         return
-    if text == "дилери":
+    if text in (kb.DEALERS, "дилери"):
         await show_dealers(message, user_id)
         return
 
     if p["view"] == "quiz":
+        if p["stage"] == "budget" and text in kb.ACTIONS:
+            storage.update(user_id, budget=text, stage="contact")
+            await quiz_question(message, storage.read(user_id))
+            return
         if p["stage"] == "car":
             storage.update(user_id, car=text, stage="year")
             await quiz_question(message, storage.read(user_id))
@@ -269,7 +275,7 @@ async def handle_text(message: Message):
             storage.update(user_id, year=text, stage="budget")
             await quiz_question(message, storage.read(user_id))
             return
-        if p["stage"] == "preferred" and text in ("в чаті", "зателефонуйте"):
+        if p["stage"] == "preferred" and text in (kb.CHAT, kb.CALL, "в чаті", "зателефонуйте"):
             storage.update(user_id, contact_method=text)
             storage.close_quiz(user_id)
             storage.update(user_id, view="result")
