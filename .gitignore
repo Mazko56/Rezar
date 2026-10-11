@@ -6,3 +6,7 @@ __pycache__/
 .idea/
 .vscode/
 .DS_Store
+# База користувачів та сесій не повинна потрапляти у GitHub.
+data/*.sqlite3
+data/*.sqlite3-shm
+data/*.sqlite3-wal

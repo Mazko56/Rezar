@@ -1,43 +1,19 @@
-# Railway deploy
+# Railway: REZAR bot 11.10.2026
 
-## 1. Репозиторий
+1. В GitHub оновити репозиторій `Mazko56/Rezar` файлами з архіву, не видаляти власну `.git`.
+2. У Railway відкрити сервіс Telegram-бота і встановити змінні з `.env.example` (`BOT_TOKEN` — із BotFather; зберігати секретно).
+3. Start Command: `python -m app.main`.
+4. Для стійкого збереження анкети у Railway сервісі додати **Volume**, монтувати в `/app/data`. У Variables можна додати `BOT_DATA_DIR=/app/data`. Без Volume дані можуть втратитися після оновлення контейнера.
+5. Боту потрібен лише **один активний worker** при використанні polling. Для production/staging — окремі токени Telegram-ботів.
+6. Перевірити Logs і команду `/start`, три питання квізу, контакт, доступи, чотири екрани Кореї й розділ менеджера.
+7. `assets/3.png` із попереднього архіву не є справжнім PNG; його треба замінити власною презентацією (`presentation_circle.mp4`, `presentation.txt`, `presentation_video.mp4`) — без файлів бот не додає жодного тексту-заглушки.
+8. Медіа до Start налаштовується в BotFather як Description Picture / Intro Media, текст опису ставиться через Telegram Bot API.
 
-Проект пушится в GitHub, потом подключается в Railway через `Deploy from GitHub Repo`.
+Наступні оновлення з `C:\\REZAR` (у CMD):
 
-## 2. Variables
-
-Добавить в Railway:
-
-```text
-BOT_TOKEN=ваш_токен_бота
-MANAGER_USERNAME=rezar_auto1
-CHANNEL_INVITE=https://t.me/+Lr5L8xRGZa9kZGRi
-CHAT_INVITE=https://t.me/+YuRmEjW__dplMTZi
-MISE_PYTHON_GITHUB_ATTESTATIONS=false
-NIXPACKS_PYTHON_VERSION=3.12
-HAPPYCAR_ID=
-HAPPYCAR_PASSWORD=
-DUOCAR_ID=
-DUOCAR_PASSWORD=
-JENO_ID=
-JENO_PASSWORD=
-GLOVIS_LOGIN=
-GLOVIS_PASSWORD=
+```bat
+cd /d C:\REZAR
+git add .
+git commit -m "REZAR exact new specification 11 Oct"
+git push origin main
 ```
-
-## 3. Start Command
-
-Если Railway не определит автоматически:
-
-```bash
-python -m app.main
-```
-
-## 4. Фото
-
-Фото загружать в папку `assets/`, потом делать push в GitHub.
-
-## 5. Экран до Start
-
-Экран до `Розпочати` задаётся через `@BotFather`, а не кодом.
-Использовать `assets/1.png`.
