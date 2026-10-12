@@ -181,7 +181,8 @@ async def send_completed_access_choices(message: Message):
 async def send_quiz_result(message: Message):
     settings = get_settings()
     await message.answer(content.QUIZ_FINISHED.format(channel=settings.channel_invite, chat=settings.chat_invite),
-                         reply_markup=kb.after_kb())
+                         reply_markup=kb.after_kb(),
+                         link_preview_options=LinkPreviewOptions(is_disabled=True))
     await send_screen(message, content.BONUS_ACCESS, photo="bonus",
                       reply_markup=kb.after_access_buttons(), parse_mode="HTML")
 
