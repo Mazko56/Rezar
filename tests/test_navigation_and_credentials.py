@@ -63,9 +63,16 @@ class ButtonPlacementTests(unittest.TestCase):
             import importlib
             cls.kb = importlib.import_module("app.keyboards")
 
-    def test_only_start_in_default_command_menu(self):
-        self.assertEqual([c.command for c in self.kb.default_commands()], ["start"])
-        self.assertEqual([c.command for c in self.kb.admin_commands()], ["start", "admin"])
+    def test_six_public_commands_and_admin_only_extra(self):
+        commands = [c.command for c in self.kb.default_commands()]
+        expected = ["start", "pick", "calc", "korea", "manager", "access"]
+        self.assertEqual(commands, expected)
+        self.assertEqual([c.command for c in self.kb.admin_commands()], expected + ["admin"])
+        self.assertEqual(
+            [c.description for c in self.kb.default_commands()],
+            ["🚀 Старт", "🚘 Підібрати авто", "🧮 Розрахувати під ключ",
+             "🇰🇷 Чому авто з Кореї?", "👨‍💼 Зв’язок з менеджером", "🔐 Доступи до аукціонів"],
+        )
 
     def test_access_top_and_bottom_are_separate(self):
         for page in (1, 2, 3):
@@ -82,11 +89,13 @@ class ButtonPlacementTests(unittest.TestCase):
             self.assertEqual(len(self.kb.korea_step_kb(page).inline_keyboard[0]), 2)
         self.assertEqual(
             [[b.text for b in row] for row in self.kb.korea_nav_kb().keyboard],
-            [[self.kb.MENU, self.kb.SHORT_MANAGER, self.kb.KOREA_SHORT]],
+            [[self.kb.PICK, self.kb.CALC],
+             [self.kb.MENU, self.kb.ACCESS_SHORT, self.kb.SHORT_MANAGER]],
         )
         self.assertEqual(
             [[b.text for b in row] for row in self.kb.korea_last_nav_kb().keyboard],
-            [[self.kb.PICK, self.kb.CALC], [self.kb.MENU, self.kb.AUCTIONS, self.kb.SHORT_MANAGER]],
+            [[self.kb.PICK, self.kb.CALC],
+             [self.kb.MENU, self.kb.ACCESS_SHORT, self.kb.SHORT_MANAGER]],
         )
 
     def test_screen_texts_not_split_at_hardcoded_points(self):

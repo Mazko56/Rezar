@@ -87,13 +87,13 @@ def access_step_kb(n):
 
 
 def korea_nav_kb():
-    # Explicit latest user clarification: menu, manager, why Korea below input.
-    return r([[MENU, SHORT_MANAGER, KOREA_SHORT]])
+    # All Korea screens: five buttons below input, in the exact 2 + 3 layout.
+    return r([[PICK, CALC], [MENU, ACCESS_SHORT, SHORT_MANAGER]])
 
 
 def korea_last_nav_kb():
-    # Last Korea screen has no buttons under its message; five below input.
-    return r([[PICK, CALC], [MENU, AUCTIONS, SHORT_MANAGER]])
+    # Final Korea screen: same five bottom buttons and no inline controls.
+    return korea_nav_kb()
 
 
 def korea_step_kb(n):
@@ -118,7 +118,15 @@ def manager_inline(username):
 
 
 def default_commands():
-    return [BotCommand(command="start", description="🚀 Старт")]
+    # Telegram requires ASCII command names; descriptions are Ukrainian.
+    return [
+        BotCommand(command="start", description="🚀 Старт"),
+        BotCommand(command="pick", description="🚘 Підібрати авто"),
+        BotCommand(command="calc", description="🧮 Розрахувати під ключ"),
+        BotCommand(command="korea", description="🇰🇷 Чому авто з Кореї?"),
+        BotCommand(command="manager", description="👨‍💼 Зв’язок з менеджером"),
+        BotCommand(command="access", description="🔐 Доступи до аукціонів"),
+    ]
 
 
 def admin_commands():

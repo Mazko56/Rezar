@@ -447,6 +447,29 @@ async def main():
                 log.warning("Could not refresh admin command menu: %s", exc)
             await admin_menu(message)
 
+    # The blue Telegram command menu opens the same screens as the bottom buttons.
+    # Telegram command identifiers are Latin (/pick, /calc, etc.); display labels
+    # remain exactly as requested in Ukrainian.
+    @dp.message(Command("pick"))
+    async def on_pick_command(message: Message):
+        await begin_quiz(message, message.from_user.id, "pick")
+
+    @dp.message(Command("calc"))
+    async def on_calc_command(message: Message):
+        await begin_quiz(message, message.from_user.id, "calc")
+
+    @dp.message(Command("korea"))
+    async def on_korea_command(message: Message):
+        await show_korea(message, message.from_user.id, 1, entering=True)
+
+    @dp.message(Command("manager"))
+    async def on_manager_command(message: Message):
+        await show_manager(message, message.from_user.id)
+
+    @dp.message(Command("access"))
+    async def on_access_command(message: Message):
+        await open_access(message, message.from_user.id)
+
     @dp.message(F.photo)
     async def on_photo(message: Message):
         await handle_admin_photo(message)
@@ -551,8 +574,8 @@ async def main():
     async def on_text(message: Message):
         await handle_text(message)
 
-    # Blue Telegram commands menu: /start for everyone; /admin visible only
-    # to the authorised administrator. All other actions use reply buttons.
+    # Blue Telegram menu: six section commands for everyone, plus
+    # /admin only in the authorised administrator's private chat.
     await bot.set_my_commands(kb.default_commands(), scope=BotCommandScopeDefault())
     for admin_id in ADMIN_IDS:
         try:

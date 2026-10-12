@@ -43,8 +43,8 @@ def load_nav_functions(sent_messages):
         KOREA="🇰🇷 Чому авто з Кореї?",
         access_nav_kb=lambda: ("bottom", "menu", "korea", "manager"),
         access_step_kb=lambda n: ("inline", "access", n),
-        korea_nav_kb=lambda: ("bottom", "menu", "manager", "korea"),
-        korea_last_nav_kb=lambda: ("bottom", "pick", "calc", "menu", "auctions", "manager"),
+        korea_nav_kb=lambda: ("bottom", "pick", "calc", "menu", "access", "manager"),
+        korea_last_nav_kb=lambda: ("bottom", "pick", "calc", "menu", "access", "manager"),
         korea_step_kb=lambda n: ("inline", "korea", n),
     )
     content = SimpleNamespace(
@@ -104,7 +104,7 @@ class BottomKeyboardDeliveryTests(unittest.TestCase):
         self.run_async(self.fn["show_korea"](self.msg, self.uid, 1, entering=True))
         self.run_async(self.fn["show_korea"](self.msg, self.uid, 2))
         self.run_async(self.fn["show_korea"](self.msg, self.uid, 3))
-        self.assertEqual(self.msg.out[0]["reply_markup"], ("bottom", "menu", "manager", "korea"))
+        self.assertEqual(self.msg.out[0]["reply_markup"], ("bottom", "pick", "calc", "menu", "access", "manager"))
         self.assertEqual([m["reply_markup"] for m in self.msg.out[1:]],
                          [("inline", "korea", 1), ("inline", "korea", 2), ("inline", "korea", 3)])
 
@@ -115,7 +115,7 @@ class BottomKeyboardDeliveryTests(unittest.TestCase):
         self.assertEqual(len(self.msg.out), 1)
         self.assertEqual(self.msg.out[0]["kind"], "screen")
         self.assertEqual(self.msg.out[0]["reply_markup"],
-                         ("bottom", "pick", "calc", "menu", "auctions", "manager"))
+                         ("bottom", "pick", "calc", "menu", "access", "manager"))
 
     def test_switch_between_korea_and_access_updates_bottom_keyboard_once(self):
         self.run_async(self.fn["show_access"](self.msg, self.uid, 1, entering=True))
