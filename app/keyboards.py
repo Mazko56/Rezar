@@ -1,4 +1,4 @@
-"""Кнопки REZAR: іконки з попередньої версії; бюджет — надійна ReplyKeyboardMarkup."""
+"""Кнопки REZAR: іконки навігації, бюджет — без доларових іконок."""
 from aiogram.types import (BotCommand, InlineKeyboardButton, InlineKeyboardMarkup,
                            KeyboardButton, ReplyKeyboardMarkup)
 
@@ -22,9 +22,9 @@ GET_ACCESS = "🔓 отримати доступи"
 WRITE_MANAGER = "💬 написати менеджеру"
 WHY_REZAR = "🇰🇷 Чому саме Rezar?"
 
-# Точні варіанти з нового ТЗ (без додаткових діапазонів), тільки іконки.
-ACTIONS = ["💵 до 15 тис.", "💵 15–20 тис.", "💵 20–30 тис", 
-           "💵 30–40 тис.", "💵 40+ тис.", "💵 безліміт"]
+# Точні варіанти бюджету з нового ТЗ; без іконок долара.
+ACTIONS = ["до 15 тис.", "15–20 тис.", "20–30 тис.",
+           "30–40 тис.", "40+ тис.", "безліміт"]
 
 
 def r(rows, *, placeholder=None):
@@ -63,12 +63,12 @@ def year_kb():
 
 def budget_kb():
     # Надійно відображається саме під рядком вводу у Telegram, без edit_reply_markup.
-    # 3+3 бюджети з ТЗ; нижче тільки «меню» та «менеджер».
-    return r([ACTIONS[:3], ACTIONS[3:], [MENU, SHORT_MANAGER]])
+    # 3+3 бюджети з ТЗ; нижче «меню» та «менеджер»; підказка в СВ.
+    return r([ACTIONS[:3], ACTIONS[3:], [MENU, SHORT_MANAGER]], placeholder="оберіть бюджет вище")
 
 
 def contact_kb():
-    return r([[MENU, SHORT_MANAGER], [CONTACT]])
+    return r([[CONTACT]])
 
 
 def preferred_kb():

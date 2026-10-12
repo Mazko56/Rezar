@@ -175,7 +175,10 @@ async def send_completed_access_choices(message: Message):
 async def send_quiz_result(message: Message):
     settings = get_settings()
     result = content.QUIZ_FINISHED.format(channel=settings.channel_invite, chat=settings.chat_invite)
-    await send_dual_controls(message, result, kb.after_kb(), kb.after_access_buttons())
+    # Перше повідомлення — тільки подяка і два посилання, а також постійна нижня клавіатура.
+    await message.answer(result, reply_markup=kb.after_kb())
+    # Друге окреме повідомлення — бонус з двома inline-кнопками над рядком вводу.
+    await message.answer(content.BONUS_ACCESS, reply_markup=kb.after_access_buttons(), parse_mode="HTML")
 
 
 async def show_auctions(message: Message, person_id: int):
