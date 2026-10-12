@@ -47,6 +47,10 @@ def _conn():
         telegram_id INTEGER PRIMARY KEY,
         awaiting_photo TEXT
     )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS auction_credentials (
+        credential_key TEXT PRIMARY KEY,
+        credential_value TEXT NOT NULL
+    )""")
     conn.commit()
     try:
         yield conn
@@ -172,3 +176,32 @@ def get_admin_pending(telegram_id: int) -> str | None:
     with _conn() as c:
         row = c.execute("SELECT awaiting_photo FROM admin_sessions WHERE telegram_id=?", (telegram_id,)).fetchone()
     return row["awaiting_photo"] if row else None
+
+
+# The admin can change individual logins/passwords without redeploying the code.
+# SQLite data must reside on a private persistent volume, not in Git.
+AUCTION_CREDENTIALS = {
+    "HAPPYCAR_ID", "HAPPYCAR_PASSWORD", "DUOCAR_ID", "DUOCAR_PASSWORD",
+    "JENO_ID", "JENO_PASSWORD", "GLOVIS_LOGIN", "GLOVIS_PASSWORD",
+}
+
+
+def set_auction_credential(key: str, value: str):
+    if key not in AUCTION_CREDENTIALS:
+        raise ValueError("Unknown auction credential")
+    with _conn() as conn:
+        conn.execute("""INSERT INTO auction_credentials(credential_key, credential_value)
+                     VALUES(?, ?) ON CONFLICT(credential_key)
+                     DO UPDATE SET credential_value=excluded.credential_value""", (key, value))
+
+
+def get_auction_credential(key: str) -> str:
+    if key not in AUCTION_CREDENTIALS:
+        raise ValueError("Unknown auction credential")
+    with _conn() as conn:
+        row = conn.execute("SELECT credential_value FROM auction_credentials WHERE credential_key=?", (key,)).fetchone()
+    return row["credential_value"] if row else os.environ.get(key, "")
+
+
+def get_admin_action(telegram_id: int) -> str | None:
+    return get_admin_pending(telegram_id)

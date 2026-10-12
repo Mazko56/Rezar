@@ -11,6 +11,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher, F
+from aiogram.types import BotCommandScopeDefault, BotCommandScopeChat
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, FSInputFile, Message, InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -42,6 +43,17 @@ PHOTO_LABELS = {
     "manager": "Зв’язок з менеджером", "bonus": "Бонус / доступи після анкети",
 }
 
+
+CREDENTIAL_LABELS = {
+    "HAPPYCAR_ID": "ХЕПІКАР — ID",
+    "HAPPYCAR_PASSWORD": "ХЕПІКАР — Password",
+    "DUOCAR_ID": "ДУОКАР — ID",
+    "DUOCAR_PASSWORD": "ДУОКАР — Password",
+    "JENO_ID": "ДЖЕНО-МОТОРС — ID",
+    "JENO_PASSWORD": "ДЖЕНО-МОТОРС — Password",
+    "GLOVIS_LOGIN": "ГЛОВІС — Login",
+    "GLOVIS_PASSWORD": "ГЛОВІС — Password",
+}
 
 def local_photo(name: str):
     filename = PHOTOS.get(name)
@@ -181,7 +193,7 @@ async def show_auctions(message: Message, user_id: int):
         "glovis_id": "GLOVIS_LOGIN", "glovis_pw": "GLOVIS_PASSWORD",
     }
     await send_screen(message, content.AUCTIONS.format(**{
-        key: os.getenv(env, "") for key, env in keys.items()
+        key: storage.get_auction_credential(env) for key, env in keys.items()
     }), photo="auctions", reply_markup=kb.after_kb())
 
 
@@ -190,43 +202,38 @@ async def show_dealers(message: Message, user_id: int):
     await send_screen(message, content.DEALERS, photo="dealers", reply_markup=kb.after_kb())
 
 
-# Inline rows contain both the step navigation and the context actions.
-# Telegram cannot attach an inline and a persistent reply keyboard to the
-# same message; embedding all required actions avoids extra/split messages.
-def access_buttons(page: int):
-    step = kb.access_step_kb(page).inline_keyboard
-    context = kb.access_nav_kb().keyboard[0]
-    return InlineKeyboardMarkup(inline_keyboard=step + [
-        [InlineKeyboardButton(text=context[0].text, callback_data="go:menu"),
-         InlineKeyboardButton(text=context[2].text, callback_data="go:manager")],
-        [InlineKeyboardButton(text=context[1].text, callback_data="go:korea")],
-    ])
-
-
-def korea_buttons(page: int):
-    nav = kb.korea_step_kb(page).inline_keyboard if page < 4 else []
-    if page < 4:
-        return InlineKeyboardMarkup(inline_keyboard=nav + [
-            [InlineKeyboardButton(text=kb.PICK, callback_data="go:pick"),
-             InlineKeyboardButton(text=kb.CALC, callback_data="go:calc")],
-            [InlineKeyboardButton(text=kb.MENU, callback_data="go:menu"),
-             InlineKeyboardButton(text=kb.SHORT_MANAGER, callback_data="go:manager")],
-            [InlineKeyboardButton(text=kb.ACCESS_SHORT, callback_data="go:access")],
-        ])
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=kb.PICK, callback_data="go:pick"),
-         InlineKeyboardButton(text=kb.CALC, callback_data="go:calc")],
-        [InlineKeyboardButton(text=kb.MENU, callback_data="go:menu"),
-         InlineKeyboardButton(text=kb.SHORT_MANAGER, callback_data="go:manager")],
-        [InlineKeyboardButton(text=kb.AUCTIONS, callback_data="go:auctions")],
-    ])
+# Telegram only supports ONE markup type per message. We set the persistent
+# reply keyboard on a short-lived invisible service message, then send the
+# normal information message with ONLY its exact inline navigation buttons.
+# Deleting the service message keeps the chat free of extra textual prompts.
+async def send_screen_with_bottom_keyboard(message: Message, text: str, *, photo: str,
+                                           inline_keyboard, bottom_keyboard):
+    anchor = None
+    try:
+        anchor = await message.answer("\u2063", reply_markup=bottom_keyboard)
+    except Exception as exc:
+        log.warning("Could not set reply keyboard: %s", exc)
+    try:
+        return await send_screen(message, screen_html(text), photo=photo,
+                                 reply_markup=inline_keyboard, parse_mode="HTML")
+    finally:
+        if anchor is not None:
+            try:
+                # Let Telegram clients receive the keyboard update first.
+                await asyncio.sleep(0.6)
+                await anchor.delete()
+            except Exception as exc:
+                log.warning("Could not remove keyboard service message: %s", exc)
 
 
 async def show_access(message: Message, user_id: int, page: int):
     storage.update(user_id, view="access")
     text = {1: content.ACCESS_1, 2: content.ACCESS_2, 3: content.ACCESS_3}[page]
-    await send_screen(message, screen_html(text), photo=f"access{page}",
-                      reply_markup=access_buttons(page), parse_mode="HTML")
+    await send_screen_with_bottom_keyboard(
+        message, text, photo=f"access{page}",
+        inline_keyboard=kb.access_step_kb(page),
+        bottom_keyboard=kb.access_nav_kb(),
+    )
 
 
 async def open_access(message: Message, user_id: int):
@@ -241,8 +248,13 @@ async def show_korea(message: Message, user_id: int, page: int):
     storage.update(user_id, view="korea")
     text = {1: content.KOREA_1, 2: content.KOREA_2,
             3: content.KOREA_3, 4: content.KOREA_4}[page]
-    await send_screen(message, screen_html(text), photo=f"korea{page}",
-                      reply_markup=korea_buttons(page), parse_mode="HTML")
+    # Screens 1-3: ONLY back/next under their photo+description.
+    # Screen 4: no inline buttons; all actions remain below text input.
+    await send_screen_with_bottom_keyboard(
+        message, text, photo=f"korea{page}",
+        inline_keyboard=kb.korea_step_kb(page) if page < 4 else None,
+        bottom_keyboard=kb.korea_nav_kb() if page < 4 else kb.korea_last_nav_kb(),
+    )
 
 
 async def show_manager(message: Message, user_id: int):
@@ -261,6 +273,11 @@ async def handle_text(message: Message):
     if not message.from_user or not message.text:
         return
     user_id = message.from_user.id
+    if await handle_admin_credential_text(message):
+        return
+    # Only /start and administrator-only /admin are supported bot commands.
+    if message.text.lstrip().startswith("/"):
+        return
     p = storage.read(user_id)
     text = message.text.strip()
 
@@ -346,14 +363,52 @@ def admin_menu_markup():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=title, callback_data=f"admin:select:{key}")]
         for key, title in PHOTO_LABELS.items()
+    ] + [[InlineKeyboardButton(text="⬅️ Адмінка", callback_data="admin:root")]])
+
+
+def admin_root_markup():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🖼 Фото повідомлень", callback_data="admin:photos")],
+        [InlineKeyboardButton(text="🔑 Логіни та паролі аукціонів", callback_data="admin:credentials")],
     ])
+
+
+def credential_menu_markup():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=label, callback_data=f"admin:cred:{key}")]
+        for key, label in CREDENTIAL_LABELS.items()
+    ] + [[InlineKeyboardButton(text="⬅️ Адмінка", callback_data="admin:root")]])
 
 
 async def admin_menu(message: Message):
     if not message.from_user or message.from_user.id not in ADMIN_IDS:
         return
-    await message.answer("Оберіть повідомлення, для якого потрібно додати або замінити фото:",
-                         reply_markup=admin_menu_markup())
+    storage.set_admin_pending(message.from_user.id, None)
+    await message.answer("Адмінка", reply_markup=admin_root_markup())
+
+
+async def handle_admin_credential_text(message: Message):
+    if message.from_user.id not in ADMIN_IDS:
+        return False
+    pending = storage.get_admin_action(message.from_user.id)
+    if not pending or not pending.startswith("credential:"):
+        return False
+    key = pending.split(":", 1)[1]
+    if key not in CREDENTIAL_LABELS:
+        return False
+    value = message.text.strip()
+    if not value:
+        return True
+    storage.set_auction_credential(key, value)
+    storage.set_admin_pending(message.from_user.id, None)
+    # A Telegram message containing a password should not remain in chat history.
+    try:
+        await message.delete()
+    except Exception as exc:
+        log.warning("Couldn't delete credential input: %s", exc)
+    await message.answer(f"✅ Збережено: {CREDENTIAL_LABELS[key]}",
+                         reply_markup=credential_menu_markup())
+    return True
 
 
 async def handle_admin_photo(message: Message):
@@ -383,7 +438,14 @@ async def main():
 
     @dp.message(Command("admin"))
     async def on_admin(message: Message):
-        await admin_menu(message)
+        if message.from_user and message.from_user.id in ADMIN_IDS:
+            try:
+                await message.bot.set_my_commands(
+                    kb.admin_commands(), scope=BotCommandScopeChat(chat_id=message.from_user.id)
+                )
+            except Exception as exc:
+                log.warning("Could not refresh admin command menu: %s", exc)
+            await admin_menu(message)
 
     @dp.message(F.photo)
     async def on_photo(message: Message):
@@ -397,7 +459,19 @@ async def main():
         parts = q.data.split(":")
         action = parts[1] if len(parts) > 1 else ""
         key = parts[2] if len(parts) > 2 else ""
-        if action == "select" and key in PHOTO_LABELS:
+        if action == "root":
+            storage.set_admin_pending(q.from_user.id, None)
+            await q.message.answer("Адмінка", reply_markup=admin_root_markup())
+        elif action == "photos":
+            storage.set_admin_pending(q.from_user.id, None)
+            await q.message.answer("Оберіть повідомлення для фото:", reply_markup=admin_menu_markup())
+        elif action == "credentials":
+            storage.set_admin_pending(q.from_user.id, None)
+            await q.message.answer("Оберіть доступ, який потрібно змінити:", reply_markup=credential_menu_markup())
+        elif action == "cred" and key in CREDENTIAL_LABELS:
+            storage.set_admin_pending(q.from_user.id, f"credential:{key}")
+            await q.message.answer(f"Надішліть нове значення для «{CREDENTIAL_LABELS[key]}».")
+        elif action == "select" and key in PHOTO_LABELS:
             storage.set_admin_pending(q.from_user.id, key)
             filename = PHOTOS[key]
             await q.message.answer(f"«{PHOTO_LABELS[key]}» — надішліть сюди фото. "
@@ -409,32 +483,13 @@ async def main():
         elif action == "reset" and key in PHOTO_LABELS:
             storage.remove_photo_override(key)
             storage.set_admin_pending(q.from_user.id, None)
-            await q.message.answer(f"Фото «{PHOTO_LABELS[key]}» скинуто. Тепер використовується assets/{PHOTOS[key]}, якщо файл є.",
+            await q.message.answer(f"Фото «{PHOTO_LABELS[key]}» скинуто. "
+                                   f"Тепер використовується assets/{PHOTOS[key]}, якщо файл є.",
                                    reply_markup=admin_menu_markup())
         elif action == "list":
             storage.set_admin_pending(q.from_user.id, None)
             await q.message.answer("Оберіть повідомлення:", reply_markup=admin_menu_markup())
         await q.answer()
-
-    @dp.message(Command("pick"))
-    async def command_pick(message: Message):
-        await begin_quiz(message, message.from_user.id, "pick")
-
-    @dp.message(Command("calc"))
-    async def command_calc(message: Message):
-        await begin_quiz(message, message.from_user.id, "calc")
-
-    @dp.message(Command("korea"))
-    async def command_korea(message: Message):
-        await show_korea(message, message.from_user.id, 1)
-
-    @dp.message(Command("access"))
-    async def command_access(message: Message):
-        await open_access(message, message.from_user.id)
-
-    @dp.message(Command("manager"))
-    async def command_manager(message: Message):
-        await show_manager(message, message.from_user.id)
 
     @dp.message(F.contact)
     async def on_contact(message: Message):
@@ -496,7 +551,14 @@ async def main():
     async def on_text(message: Message):
         await handle_text(message)
 
-    await bot.set_my_commands(kb.bot_commands())
+    # Blue Telegram commands menu: /start for everyone; /admin visible only
+    # to the authorised administrator. All other actions use reply buttons.
+    await bot.set_my_commands(kb.default_commands(), scope=BotCommandScopeDefault())
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.set_my_commands(kb.admin_commands(), scope=BotCommandScopeChat(chat_id=admin_id))
+        except Exception as exc:
+            log.warning("Could not set scoped admin commands for %s: %s", admin_id, exc)
     try:
         await bot.set_my_description(description=content.BOT_INTRO)
     except Exception as exc:

@@ -1,6 +1,8 @@
-"""Кнопки REZAR: іконки навігації, бюджет — без доларових іконок."""
-from aiogram.types import (BotCommand, InlineKeyboardButton, InlineKeyboardMarkup,
-                           KeyboardButton, ReplyKeyboardMarkup)
+"""REZAR: inline means under the screen; reply keyboard means under input."""
+from aiogram.types import (
+    BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 PICK = "🚘 Підібрати авто"
 CALC = "🧮 Розрахувати під ключ"
@@ -22,35 +24,25 @@ GET_ACCESS = "🔓 отримати доступи"
 WRITE_MANAGER = "💬 написати менеджеру"
 WHY_REZAR = "🇰🇷 Чому саме Rezar?"
 
-# Точні варіанти бюджету з нового ТЗ; без іконок долара.
 ACTIONS = ["до 15 тис.", "15–20 тис.", "20–30 тис.",
            "30–40 тис.", "40+ тис.", "безліміт"]
 
 
 def r(rows, *, placeholder=None):
-    return ReplyKeyboardMarkup(keyboard=[
-        [KeyboardButton(text=text, request_contact=(text == CONTACT)) for text in row]
-        for row in rows
-    ], resize_keyboard=True, is_persistent=True, input_field_placeholder=placeholder)
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=s, request_contact=(s == CONTACT)) for s in row] for row in rows],
+        resize_keyboard=True, is_persistent=True, input_field_placeholder=placeholder,
+    )
 
 
 def i(rows):
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=text, callback_data=callback) for text, callback in row
-    ] for row in rows])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=text, callback_data=callback) for text, callback in row] for row in rows
+    ])
 
 
 def main_kb():
     return r([[PICK, CALC], [KOREA, MANAGER], [ACCESS]])
-
-
-def quiz_kb():
-    return r([[MENU, SHORT_MANAGER], [ACCESS]])
-
-
-def budget_bottom_kb():
-    # Залишено для сумісності з попередніми викликами.
-    return r([[MENU, SHORT_MANAGER]])
 
 
 def car_kb():
@@ -62,8 +54,6 @@ def year_kb():
 
 
 def budget_kb():
-    # Надійно відображається саме під рядком вводу у Telegram, без edit_reply_markup.
-    # 3+3 бюджети з ТЗ; нижче «меню» та «менеджер»; підказка в СВ.
     return r([ACTIONS[:3], ACTIONS[3:], [MENU, SHORT_MANAGER]], placeholder="оберіть бюджет вище")
 
 
@@ -84,6 +74,7 @@ def after_access_buttons():
 
 
 def access_nav_kb():
+    # ONLY three buttons under the text-input field, not under access message.
     return r([[MENU, KOREA_SHORT, SHORT_MANAGER]])
 
 
@@ -95,10 +86,14 @@ def access_step_kb(n):
     return i([[(BACK, "access:2"), (GET_ACCESS, "access:get")]])
 
 
-def korea_kb(last=False):
-    if last:
-        return r([[PICK, CALC], [MENU, AUCTIONS, SHORT_MANAGER]])
-    return r([[PICK, CALC], [MENU, ACCESS_SHORT, SHORT_MANAGER]])
+def korea_nav_kb():
+    # Explicit latest user clarification: menu, manager, why Korea below input.
+    return r([[MENU, SHORT_MANAGER, KOREA_SHORT]])
+
+
+def korea_last_nav_kb():
+    # Last Korea screen has no buttons under its message; five below input.
+    return r([[PICK, CALC], [MENU, AUCTIONS, SHORT_MANAGER]])
 
 
 def korea_step_kb(n):
@@ -122,12 +117,9 @@ def manager_inline(username):
     ])
 
 
-def bot_commands():
-    return [
-        BotCommand(command="start", description="🚀 Старт"),
-        BotCommand(command="pick", description=PICK),
-        BotCommand(command="calc", description=CALC),
-        BotCommand(command="korea", description=KOREA),
-        BotCommand(command="manager", description=MANAGER),
-        BotCommand(command="access", description="🔐 Доступи до аукціонів"),
-    ]
+def default_commands():
+    return [BotCommand(command="start", description="🚀 Старт")]
+
+
+def admin_commands():
+    return default_commands() + [BotCommand(command="admin", description="🛠 Адмінка")]
