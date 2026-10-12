@@ -46,15 +46,20 @@ def main_kb():
 
 
 def car_kb():
-    return r([[MENU, SHORT_MANAGER], [ACCESS]], placeholder="напишіть марку, модель")
+    return r([[SHORT_MANAGER], [ACCESS]], placeholder="напишіть марку, модель")
 
 
 def year_kb():
-    return r([[MENU, SHORT_MANAGER], [ACCESS]], placeholder="напишіть рік/роки виготовлення")
+    return r([[SHORT_MANAGER], [ACCESS]], placeholder="рік виробництва")
 
 
 def budget_kb():
-    return r([ACTIONS[:3], ACTIONS[3:], [MENU, SHORT_MANAGER]], placeholder="оберіть бюджет вище")
+    return i([[(label, f"budget:{n}") for n, label in enumerate(ACTIONS[:3])],
+              [(label, f"budget:{n+3}") for n, label in enumerate(ACTIONS[3:])]])
+
+
+def budget_nav_kb():
+    return r([[SHORT_MANAGER]], placeholder="оберіть бюджет вище")
 
 
 def contact_kb():
@@ -66,7 +71,7 @@ def preferred_kb():
 
 
 def after_kb():
-    return r([[MENU, KOREA_SHORT, SHORT_MANAGER]])
+    return r([[KOREA_SHORT, SHORT_MANAGER]])
 
 
 def after_access_buttons():
@@ -75,7 +80,7 @@ def after_access_buttons():
 
 def access_nav_kb():
     # ONLY three buttons under the text-input field, not under access message.
-    return r([[MENU, KOREA_SHORT, SHORT_MANAGER]])
+    return r([[KOREA_SHORT, SHORT_MANAGER]])
 
 
 def access_step_kb(n):
@@ -88,7 +93,7 @@ def access_step_kb(n):
 
 def korea_nav_kb():
     # All Korea screens: five buttons below input, in the exact 2 + 3 layout.
-    return r([[PICK, CALC], [MENU, ACCESS_SHORT, SHORT_MANAGER]])
+    return r([[PICK, CALC], [ACCESS_SHORT, SHORT_MANAGER]])
 
 
 def korea_last_nav_kb():
@@ -105,7 +110,7 @@ def korea_step_kb(n):
 
 
 def manager_kb(has_contact=False):
-    rows = [[MENU, ACCESS_SHORT]]
+    rows = [[KOREA_SHORT, ACCESS_SHORT]]
     if not has_contact:
         rows.append([CONTACT])
     return r(rows, placeholder="напишіть Ваш запит")

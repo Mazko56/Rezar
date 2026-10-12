@@ -11,8 +11,8 @@ KEYBOARDS = (ROOT / 'app' / 'keyboards.py').read_text(encoding='utf-8')
 
 class LatestThreeFixes(unittest.TestCase):
     def test_manager_link_labels_and_urls(self):
-        self.assertIn('Підписуйтесь:\n\nТелеграм канал - https://t.me/+Lr5L8xRGZa9kZGRi', content.MANAGER)
-        self.assertIn('Гарячі лоти - https://t.me/+YuRmEjW__dplMTZi', content.MANAGER)
+        self.assertIn('Телеграм канал - https://t.me/+Lr5L8xRGZa9kZGRi', content.MANAGER)
+        self.assertIn('Чат «Гарячі лоти в Кореї» - https://t.me/+YuRmEjW__dplMTZi', content.MANAGER)
         self.assertNotIn('канал линк', content.MANAGER)
         self.assertNotIn('чат “Гарячі Лоти”', content.MANAGER)
 

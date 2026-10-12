@@ -81,7 +81,7 @@ class ButtonPlacementTests(unittest.TestCase):
             self.assertEqual(len(top.inline_keyboard[0]), 2)
         self.assertEqual(
             [[b.text for b in row] for row in self.kb.access_nav_kb().keyboard],
-            [[self.kb.MENU, self.kb.KOREA_SHORT, self.kb.SHORT_MANAGER]],
+            [[self.kb.KOREA_SHORT, self.kb.SHORT_MANAGER]],
         )
 
     def test_korea_navigation_and_final_buttons(self):
@@ -90,12 +90,12 @@ class ButtonPlacementTests(unittest.TestCase):
         self.assertEqual(
             [[b.text for b in row] for row in self.kb.korea_nav_kb().keyboard],
             [[self.kb.PICK, self.kb.CALC],
-             [self.kb.MENU, self.kb.ACCESS_SHORT, self.kb.SHORT_MANAGER]],
+             [self.kb.ACCESS_SHORT, self.kb.SHORT_MANAGER]],
         )
         self.assertEqual(
             [[b.text for b in row] for row in self.kb.korea_last_nav_kb().keyboard],
             [[self.kb.PICK, self.kb.CALC],
-             [self.kb.MENU, self.kb.ACCESS_SHORT, self.kb.SHORT_MANAGER]],
+             [self.kb.ACCESS_SHORT, self.kb.SHORT_MANAGER]],
         )
 
     def test_screen_texts_not_split_at_hardcoded_points(self):

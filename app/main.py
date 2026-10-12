@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import BotCommandScopeDefault, BotCommandScopeChat
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, FSInputFile, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, FSInputFile, Message, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions
 
 from . import content, keyboards as kb, storage
 from .config import get_settings
@@ -72,7 +72,7 @@ def local_photo(name: str):
 
 
 async def send_screen(message: Message, text: str, *, photo: str | None = None,
-                      reply_markup=None, parse_mode=None):
+                      reply_markup=None, parse_mode=None, disable_preview=False):
     """One Telegram message for photo+heading+body, when caption <= 1024 chars."""
     media_override = storage.get_photo_override(photo) if photo else None
     candidates = [media_override, local_photo(photo)] if photo else []
@@ -86,10 +86,12 @@ async def send_screen(message: Message, text: str, *, photo: str | None = None,
             # The Telegram Bot API caption limit is 1024 chars. This branch
             # affects only longer, unrelated screens; Korea/access fit in one.
             await message.answer_photo(media)
-            return await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
+            return await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode,
+                                                  link_preview_options=LinkPreviewOptions(is_disabled=True) if disable_preview else None)
         except Exception as exc:
             log.warning("Photo for %s could not be sent, trying fallback: %s", photo, exc)
-    return await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    return await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode,
+                                                  link_preview_options=LinkPreviewOptions(is_disabled=True) if disable_preview else None)
 
 
 def screen_html(text: str) -> str:
@@ -194,12 +196,12 @@ async def show_auctions(message: Message, user_id: int):
     }
     await send_screen(message, content.AUCTIONS.format(**{
         key: storage.get_auction_credential(env) for key, env in keys.items()
-    }), photo="auctions", reply_markup=kb.after_kb())
+    }), photo="auctions", reply_markup=kb.after_kb(), disable_preview=True)
 
 
 async def show_dealers(message: Message, user_id: int):
     storage.update(user_id, view="dealers")
-    await send_screen(message, content.DEALERS, photo="dealers", reply_markup=kb.after_kb())
+    await send_screen(message, content.DEALERS, photo="dealers", reply_markup=kb.after_kb(), disable_preview=True)
 
 
 # Telegram messages can carry ONE reply_markup: either inline buttons or a
@@ -264,9 +266,10 @@ async def show_manager(message: Message, user_id: int):
     # Telegram supports only one markup type per message, so the manager section
     # retains the prior two-part layout (the Korea/access screens do NOT split).
     first, sep, second = content.MANAGER.partition("\n\n")
-    await send_screen(message, first, photo="manager", reply_markup=kb.manager_kb(bool(person["phone"])))
+    await send_screen(message, first, photo="manager", reply_markup=kb.manager_kb(bool(person["phone"])), parse_mode="HTML", disable_preview=True)
     if sep:
-        await message.answer(second, reply_markup=kb.manager_inline(get_settings().manager_username))
+        await message.answer(second, reply_markup=kb.manager_inline(get_settings().manager_username),
+                             parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
 
 
 async def handle_text(message: Message):
@@ -295,6 +298,12 @@ async def handle_text(message: Message):
         return
     if text in (kb.MANAGER, kb.SHORT_MANAGER, "Зв’язок з менеджером", "менеджер"):
         await show_manager(message, user_id)
+        return
+    if text == kb.ACCESS_SHORT and p["view"] in {"korea", "manager"}:
+        if p["phone"] and storage.has_completed_quiz(user_id):
+            await send_completed_access_choices(message)
+        else:
+            await begin_quiz(message, user_id, "access")
         return
     if text in (kb.ACCESS, kb.ACCESS_SHORT, kb.AUCTIONS,
                 "аукціони", "Безкоштовні доступи до аукціонів", "доступи до аукціонів"):
@@ -332,7 +341,8 @@ async def handle_text(message: Message):
             await message.answer(content.MANAGER_TYPED, reply_markup=kb.manager_kb(False))
         return
     if p["view"] in ("auctions", "dealers"):
-        await message.answer(content.OTHER_TEXT, reply_markup=kb.after_kb())
+        await message.answer(content.OTHER_TEXT, reply_markup=kb.after_kb(),
+                             link_preview_options=LinkPreviewOptions(is_disabled=True))
         return
     if p["view"] == "access":
         await message.answer(content.ACCESS_INPUT_RESPONSE, reply_markup=kb.access_nav_kb())
@@ -517,6 +527,24 @@ async def main():
     @dp.message(F.contact)
     async def on_contact(message: Message):
         await handle_contact(message)
+
+    @dp.callback_query(F.data.startswith("budget:"))
+    async def on_budget(q: CallbackQuery):
+        await q.answer()
+        person = storage.read(q.from_user.id)
+        if person["view"] != "quiz" or person["source"] not in storage.ORIGINS:
+            return
+        origin = person["source"]
+        draft = storage.read_quiz(q.from_user.id, origin)
+        if draft["stage"] != "budget":
+            return
+        try:
+            idx = int(q.data.split(":", 1)[1])
+            value = kb.ACTIONS[idx]
+        except (ValueError, IndexError):
+            return
+        storage.update_quiz(q.from_user.id, origin, budget=value, stage="contact")
+        await quiz_question(q.message, q.from_user.id, origin)
 
     @dp.callback_query(F.data.startswith("access:"))
     async def on_access(q: CallbackQuery):

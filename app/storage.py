@@ -195,12 +195,24 @@ def set_auction_credential(key: str, value: str):
                      DO UPDATE SET credential_value=excluded.credential_value""", (key, value))
 
 
+DEFAULT_AUCTION_CREDENTIALS = {
+    "HAPPYCAR_ID": "abc",
+    "HAPPYCAR_PASSWORD": "123456!",
+    "DUOCAR_ID": "DUOCAR123",
+    "DUOCAR_PASSWORD": "duocar123",
+    "JENO_ID": "mit111",
+    "JENO_PASSWORD": "1234",
+    "GLOVIS_LOGIN": "bexguest2",
+    "GLOVIS_PASSWORD": "Kurtka2@",
+}
+
+
 def get_auction_credential(key: str) -> str:
     if key not in AUCTION_CREDENTIALS:
         raise ValueError("Unknown auction credential")
     with _conn() as conn:
         row = conn.execute("SELECT credential_value FROM auction_credentials WHERE credential_key=?", (key,)).fetchone()
-    return row["credential_value"] if row else os.environ.get(key, "")
+    return row["credential_value"] if row else os.environ.get(key) or DEFAULT_AUCTION_CREDENTIALS[key]
 
 
 def get_admin_action(telegram_id: int) -> str | None:
