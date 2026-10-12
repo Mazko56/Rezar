@@ -202,37 +202,32 @@ async def show_dealers(message: Message, user_id: int):
     await send_screen(message, content.DEALERS, photo="dealers", reply_markup=kb.after_kb())
 
 
-# Telegram only supports ONE markup type per message. We set the persistent
-# reply keyboard on a short-lived invisible service message, then send the
-# normal information message with ONLY its exact inline navigation buttons.
-# Deleting the service message keeps the chat free of extra textual prompts.
-async def send_screen_with_bottom_keyboard(message: Message, text: str, *, photo: str,
-                                           inline_keyboard, bottom_keyboard):
-    anchor = None
-    try:
-        anchor = await message.answer("\u2063", reply_markup=bottom_keyboard)
-    except Exception as exc:
-        log.warning("Could not set reply keyboard: %s", exc)
-    try:
-        return await send_screen(message, screen_html(text), photo=photo,
-                                 reply_markup=inline_keyboard, parse_mode="HTML")
-    finally:
-        if anchor is not None:
-            try:
-                # Let Telegram clients receive the keyboard update first.
-                await asyncio.sleep(0.6)
-                await anchor.delete()
-            except Exception as exc:
-                log.warning("Could not remove keyboard service message: %s", exc)
+# Telegram messages can carry ONE reply_markup: either inline buttons or a
+# persistent reply keyboard.  Do not send invisible/deleted messages to trick
+# the client into showing a keyboard: deleting such messages often dismisses
+# the reply keyboard, and the user sees a flashing empty bubble.
+#
+# For screens with inline Back/Next, send ONE real, persistent section heading
+# with the lower keyboard when the user enters the section. The photo+full
+# description then follows with its own Back/Next inline buttons. Following
+# steps keep the already established lower keyboard; no additional headings.
+# This extra, nonempty section heading is necessary to establish two different
+# keyboard types reliably via the Telegram Bot API.
+async def set_section_keyboard(message: Message, section_title: str, keyboard):
+    return await message.answer(section_title, reply_markup=keyboard)
 
 
-async def show_access(message: Message, user_id: int, page: int):
+async def show_access(message: Message, user_id: int, page: int, *, entering: bool = False):
+    old_view = storage.read(user_id)["view"]
     storage.update(user_id, view="access")
+    # Always send the bottom keyboard upon explicit entry, and when entering
+    # from another section. Never send it during Back/Next navigation.
+    if entering or old_view != "access":
+        await set_section_keyboard(message, kb.ACCESS, kb.access_nav_kb())
     text = {1: content.ACCESS_1, 2: content.ACCESS_2, 3: content.ACCESS_3}[page]
-    await send_screen_with_bottom_keyboard(
-        message, text, photo=f"access{page}",
-        inline_keyboard=kb.access_step_kb(page),
-        bottom_keyboard=kb.access_nav_kb(),
+    return await send_screen(
+        message, screen_html(text), photo=f"access{page}",
+        reply_markup=kb.access_step_kb(page), parse_mode="HTML",
     )
 
 
@@ -241,19 +236,24 @@ async def open_access(message: Message, user_id: int):
     if person["phone"] and storage.has_completed_quiz(user_id):
         await show_auctions(message, user_id)
     else:
-        await show_access(message, user_id, 1)
+        await show_access(message, user_id, 1, entering=True)
 
 
-async def show_korea(message: Message, user_id: int, page: int):
+async def show_korea(message: Message, user_id: int, page: int, *, entering: bool = False):
+    old_view = storage.read(user_id)["view"]
     storage.update(user_id, view="korea")
     text = {1: content.KOREA_1, 2: content.KOREA_2,
             3: content.KOREA_3, 4: content.KOREA_4}[page]
-    # Screens 1-3: ONLY back/next under their photo+description.
-    # Screen 4: no inline buttons; all actions remain below text input.
-    await send_screen_with_bottom_keyboard(
-        message, text, photo=f"korea{page}",
-        inline_keyboard=kb.korea_step_kb(page) if page < 4 else None,
-        bottom_keyboard=kb.korea_nav_kb() if page < 4 else kb.korea_last_nav_kb(),
+    if page == 4:
+        # The specification asks for NO inline buttons on the last page,
+        # so the message itself can safely carry the bottom reply keyboard.
+        return await send_screen(message, screen_html(text), photo="korea4",
+                                 reply_markup=kb.korea_last_nav_kb(), parse_mode="HTML")
+    if entering or old_view != "korea":
+        await set_section_keyboard(message, kb.KOREA, kb.korea_nav_kb())
+    return await send_screen(
+        message, screen_html(text), photo=f"korea{page}",
+        reply_markup=kb.korea_step_kb(page), parse_mode="HTML",
     )
 
 
@@ -291,7 +291,7 @@ async def handle_text(message: Message):
         await begin_quiz(message, user_id, "calc")
         return
     if text in (kb.KOREA, kb.KOREA_SHORT, "Чому авто з Кореї?", "а чому з Кореї?"):
-        await show_korea(message, user_id, 1)
+        await show_korea(message, user_id, 1, entering=True)
         return
     if text in (kb.MANAGER, kb.SHORT_MANAGER, "Зв’язок з менеджером", "менеджер"):
         await show_manager(message, user_id)
@@ -526,7 +526,7 @@ async def main():
         if where == "menu":
             await main_menu(q.message, uid)
         elif where == "korea":
-            await show_korea(q.message, uid, 1)
+            await show_korea(q.message, uid, 1, entering=True)
         elif where == "manager":
             await show_manager(q.message, uid)
         elif where == "pick":
