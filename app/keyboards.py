@@ -74,6 +74,10 @@ def after_kb():
     return r([[KOREA_SHORT, SHORT_MANAGER]])
 
 
+def repeat_access_buttons():
+    return i([[(AUCTIONS, "open:auctions")], [(DEALERS, "open:dealers")]])
+
+
 def after_access_buttons():
     return i([[(AUCTIONS, "open:auctions"), (DEALERS, "open:dealers")]])
 

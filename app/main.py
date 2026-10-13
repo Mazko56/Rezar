@@ -174,8 +174,8 @@ async def begin_quiz(message: Message, user_id: int, origin: str, *, actor=None)
 
 
 async def send_completed_access_choices(message: Message):
-    await send_screen(message, content.BONUS_ACCESS, photo="bonus",
-                      reply_markup=kb.after_access_buttons(), parse_mode="HTML")
+    await send_screen(message, content.REPEAT_ACCESS_CHOICES,
+                      reply_markup=kb.repeat_access_buttons(), parse_mode="HTML")
 
 
 async def send_quiz_result(message: Message):
@@ -237,7 +237,7 @@ async def show_access(message: Message, user_id: int, page: int, *, entering: bo
 async def open_access(message: Message, user_id: int):
     person = storage.read(user_id)
     if person["phone"] and storage.has_completed_quiz(user_id):
-        await show_auctions(message, user_id)
+        await send_completed_access_choices(message)
     else:
         await show_access(message, user_id, 1, entering=True)
 
