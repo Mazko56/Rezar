@@ -11,11 +11,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import BotCommandScopeDefault, BotCommandScopeChat
+from aiogram.types import BotCommandScopeDefault, BotCommandScopeChat, WebAppInfo
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, FSInputFile, Message, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, ReplyKeyboardRemove
 
-from . import content, keyboards as kb, storage
+from . import content, keyboards as kb, storage, admin_db
 from .config import get_settings
 
 logging.basicConfig(level=logging.INFO)
@@ -74,7 +74,23 @@ def local_photo(name: str):
 async def send_screen(message: Message, text: str, *, photo: str | None = None,
                       reply_markup=None, parse_mode=None, disable_preview=False):
     """One Telegram message for photo+heading+body, when caption <= 1024 chars."""
-    media_override = storage.get_photo_override(photo) if photo else None
+    # Mini App overrides are screen-scoped and keep the original flow if unset.
+    override = admin_db.get_content(photo) if photo else None
+    if override:
+        if override.get('body'):
+            text = override['body']
+        if override.get('buttons_json') and override['buttons_json'] != '[]':
+            try:
+                import json
+                chosen=json.loads(override['buttons_json'])
+                if chosen:
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text=item['text'], callback_data=item['callback'])]
+                        for item in chosen
+                    ])
+            except Exception:
+                log.exception('Invalid custom buttons for screen %s',photo)
+    media_override = (override or {}).get('media_file_id') or (storage.get_photo_override(photo) if photo else None)
     candidates = [media_override, local_photo(photo)] if photo else []
     for media in candidates:
         if not media:
@@ -455,7 +471,13 @@ async def main():
 
     @dp.message(Command("admin"))
     async def on_admin(message: Message):
-        if message.from_user and message.from_user.id in ADMIN_IDS:
+        if message.from_user and admin_db.role(message.from_user.id):
+            url = os.getenv("MINIAPP_URL", "").strip()
+            if url and url.startswith("https://"):
+                await message.answer("REZAR — адмінка", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="Відкрити Mini App", web_app=WebAppInfo(url=url))]
+                ]))
+                return
             try:
                 await message.bot.set_my_commands(
                     kb.admin_commands(), scope=BotCommandScopeChat(chat_id=message.from_user.id)
@@ -641,7 +663,15 @@ async def main():
     except Exception as exc:
         log.warning("Could not set bot description: %s", exc)
     await bot.delete_webhook(drop_pending_updates=False)
-    await dp.start_polling(bot)
+    if os.getenv("MINIAPP_URL", ""):
+        import uvicorn
+        from .admin_web import app as web_app
+        from .admin_worker import broadcast_loop
+        config = uvicorn.Config(web_app, host="0.0.0.0", port=int(os.getenv("PORT", "8080")), log_level="info")
+        server = uvicorn.Server(config)
+        await asyncio.gather(server.serve(), dp.start_polling(bot), broadcast_loop(bot))
+    else:
+        await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
