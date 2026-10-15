@@ -139,9 +139,9 @@ async def start(message: Message):
 
 
 async def ask_preferred(message: Message):
-    # Remove old reply keyboard and attach inline choices to the SAME visible message.
-    sent = await message.answer(content.PREFERRED_CONTACT, reply_markup=ReplyKeyboardRemove())
-    await sent.edit_reply_markup(reply_markup=kb.preferred_kb())
+    # Attach both choices directly to the prompt. Editing the reply markup of a
+    # previous message after ReplyKeyboardRemove may fail, leaving no choices.
+    await message.answer(content.PREFERRED_CONTACT, reply_markup=kb.preferred_kb())
 
 
 async def quiz_question(message: Message, user_id: int, origin: str):
