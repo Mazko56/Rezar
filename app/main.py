@@ -6,6 +6,7 @@ import asyncio
 import html
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -15,7 +16,8 @@ from aiogram.types import BotCommandScopeDefault, BotCommandScopeChat, WebAppInf
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, FSInputFile, Message, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, ReplyKeyboardRemove
 
-from . import content, keyboards as kb, storage, admin_db
+from . import content, keyboards as kb, storage, admin_db, integrations
+from .miniapp_config import get_miniapp_url
 from .config import get_settings
 
 logging.basicConfig(level=logging.INFO)
@@ -72,13 +74,20 @@ def local_photo(name: str):
 
 
 async def send_screen(message: Message, text: str, *, photo: str | None = None,
-                      reply_markup=None, parse_mode=None, disable_preview=False):
+                      reply_markup=None, parse_mode=None, disable_preview=False, template_data=None, apply_body=True):
     """One Telegram message for photo+heading+body, when caption <= 1024 chars."""
     # Mini App overrides are screen-scoped and keep the original flow if unset.
+    original_text = text
     override = admin_db.get_content(photo) if photo else None
     if override:
-        if override.get('body'):
+        if apply_body and override.get('body'):
             text = override['body']
+            if template_data:
+                try:
+                    text = text.format_map(template_data)
+                except (KeyError,ValueError):
+                    log.warning('Invalid placeholder for %s',photo)
+                    text = original_text
         if override.get('buttons_json') and override['buttons_json'] != '[]':
             try:
                 import json
@@ -146,7 +155,14 @@ async def main_menu(message: Message, user_id: int):
 
 async def start(message: Message):
     user_id = message.from_user.id
-    storage.read(user_id)
+    previous = storage.read(user_id)
+    match = re.fullmatch(r'[A-Za-z0-9_-]{1,64}', (message.text or '').split(maxsplit=1)[1]) if len((message.text or '').split(maxsplit=1)) > 1 else None
+    code = match.group(0) if match else None
+    storage.record_user(message.from_user, start_param=code)
+    name = 'return_start' if previous.get('first_start') else 'bot_start'
+    admin_db.log_event(user_id,name,source_code=code)
+    admin_db.queue_outbox('graspil',f'{user_id}:{name}:{message.message_id}',
+        integrations.graspil_event(name,storage.read(user_id)))
     storage.update(user_id, view="home")
     await send_screen(message, content.HOME, photo="home")
     await asyncio.sleep(2)
@@ -191,7 +207,7 @@ async def begin_quiz(message: Message, user_id: int, origin: str, *, actor=None)
         elif origin in {"pick", "access"}:
             user = actor or message.from_user
             username = f"@{html.escape(user.username)}" if user and user.username else html.escape(user.first_name or "") if user else ""
-            await send_screen(message, content.PICK_INTRO.format(username=username), photo="pick")
+            await send_screen(message, content.PICK_INTRO.format(username=username), photo="pick", template_data={"username":username})
     await quiz_question(message, user_id, origin)
 
 
@@ -217,9 +233,10 @@ async def show_auctions(message: Message, user_id: int):
         "jeno_id": "JENO_ID", "jeno_pw": "JENO_PASSWORD",
         "glovis_id": "GLOVIS_LOGIN", "glovis_pw": "GLOVIS_PASSWORD",
     }
-    await send_screen(message, content.AUCTIONS.format(**{
-        key: html.escape(storage.get_auction_credential(env)) for key, env in keys.items()
-    }), photo="auctions", reply_markup=kb.after_kb(), parse_mode="HTML", disable_preview=True)
+    credential_values = {key: html.escape(storage.get_auction_credential(env)) for key, env in keys.items()}
+    await send_screen(message, content.AUCTIONS.format(**credential_values),
+                      photo="auctions", reply_markup=kb.after_kb(), parse_mode="HTML",
+                      disable_preview=True, template_data=credential_values)
 
 
 async def show_dealers(message: Message, user_id: int):
@@ -288,8 +305,10 @@ async def show_manager(message: Message, user_id: int):
     # Keep the original direct-message URL button and the contact-sharing keyboard.
     # Telegram supports only one markup type per message, so the manager section
     # retains the prior two-part layout (the Korea/access screens do NOT split).
-    first, sep, second = content.MANAGER.partition("\n\n")
-    await send_screen(message, first, photo="manager", reply_markup=kb.manager_kb(bool(person["phone"])), parse_mode="HTML", disable_preview=True)
+    managed = admin_db.get_content('manager')
+    manager_text = (managed or {}).get('body') or content.MANAGER
+    first, sep, second = manager_text.partition("\n\n")
+    await send_screen(message, first, photo="manager", reply_markup=kb.manager_kb(bool(person["phone"])), parse_mode="HTML", disable_preview=True, apply_body=False)
     if sep:
         await message.answer(second, reply_markup=kb.manager_inline(get_settings().manager_username),
                              parse_mode="HTML", link_preview_options=LinkPreviewOptions(is_disabled=True))
@@ -299,6 +318,7 @@ async def handle_text(message: Message):
     if not message.from_user or not message.text:
         return
     user_id = message.from_user.id
+    storage.record_user(message.from_user)
     if await handle_admin_credential_text(message):
         return
     # Only /start and administrator-only /admin are supported bot commands.
@@ -354,6 +374,11 @@ async def handle_text(message: Message):
         if q["stage"] == "preferred" and text in (kb.CHAT, kb.CALL, "в чаті", "зателефонуйте"):
             storage.update_quiz(user_id, origin, contact_method=text)
             storage.complete_quiz(user_id, origin)
+            person = storage.read(user_id)
+            admin_db.log_event(user_id,'lead_created',source_code=person.get('start_param'),details={'section':origin})
+            revision = storage.read_quiz(user_id,origin)['submission_seq']
+            lead_key=f'{user_id}:{origin}:{revision}'
+            admin_db.queue_outbox('keycrm',lead_key,integrations.keycrm_payload(person,lead_key))
             storage.update(user_id, view="result")
             await send_quiz_result(message)
             return
@@ -472,19 +497,19 @@ async def main():
     @dp.message(Command("admin"))
     async def on_admin(message: Message):
         if message.from_user and admin_db.role(message.from_user.id):
-            url = os.getenv("MINIAPP_URL", "").strip()
-            if url and url.startswith("https://"):
+            url = get_miniapp_url()
+            if url:
                 await message.answer("REZAR — адмінка", reply_markup=InlineKeyboardMarkup(inline_keyboard=[
                     [InlineKeyboardButton(text="Відкрити Mini App", web_app=WebAppInfo(url=url))]
                 ]))
                 return
-            try:
-                await message.bot.set_my_commands(
-                    kb.admin_commands(), scope=BotCommandScopeChat(chat_id=message.from_user.id)
-                )
-            except Exception as exc:
-                log.warning("Could not refresh admin command menu: %s", exc)
-            await admin_menu(message)
+            await message.answer(
+                "Mini App ще не налаштовано.\n\n"
+                "У Railway відкрийте Settings → Networking → Generate Domain. "
+                "Потім у Variables додайте MINIAPP_URL=https://<ваш-домен> "
+                "та виконайте Redeploy.\n\n"
+                "Після цього повторно введіть /admin."
+            )
 
     # The blue Telegram command menu opens the same screens as the bottom buttons.
     # Telegram command identifiers are Latin (/pick, /calc, etc.); display labels
@@ -663,7 +688,7 @@ async def main():
     except Exception as exc:
         log.warning("Could not set bot description: %s", exc)
     await bot.delete_webhook(drop_pending_updates=False)
-    if os.getenv("MINIAPP_URL", ""):
+    if get_miniapp_url():
         import uvicorn
         from .admin_web import app as web_app
         from .admin_worker import broadcast_loop

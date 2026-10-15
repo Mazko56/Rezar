@@ -1,15 +1,40 @@
 """Telegram WebApp authenticated API. Do not use query-string Telegram IDs for authorization."""
-import os, json, time, hmac, hashlib, csv, io, re
+import os, json, time, hmac, hashlib, csv, io, re, datetime
 from pathlib import Path
 from urllib.parse import parse_qsl
 from fastapi import FastAPI, HTTPException, Header, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from pydantic import BaseModel, Field
 from . import admin_db as adb
-from . import content
+from . import content, integrations, storage
 
 app=FastAPI(title='REZAR Admin')
 FRONT=Path(__file__).resolve().parent.parent/'miniapp'/'index.html'
+
+SCREEN_NAMES = {
+  'home':'Головна / вступ','presentation':'Мініпрезентація','pick':'Підібрати авто',
+  'calc':'Розрахунок під ключ','quiz_ready':'Анкета сформована',
+  'access1':'Доступи — Секретність','access2':'Доступи — Важливість',
+  'access3':'Доступи — Ексклюзивність','korea1':'Корея — Вибір',
+  'korea2':'Корея — Вигода','korea3':'Корея — Переваги',
+  'korea4':'Чому Rezar','manager':'Зв’язок з менеджером',
+  'bonus':'Доступи після заявки','auctions':'Аукціони','dealers':'Дилери'
+}
+SCREEN_DEFAULTS = {
+  'home':content.HOME, 'pick':content.PICK_INTRO, 'calc':content.CALC_INTRO,
+  'quiz_ready':content.QUIZ_READY,'access1':content.ACCESS_1,
+  'access2':content.ACCESS_2,'access3':content.ACCESS_3,
+  'korea1':content.KOREA_1,'korea2':content.KOREA_2,'korea3':content.KOREA_3,
+  'korea4':content.KOREA_4,'manager':content.MANAGER,
+  'bonus':content.BONUS_ACCESS,'auctions':content.AUCTIONS,'dealers':content.DEALERS,
+  'presentation':''
+}
+
+def _valid_date(v):
+    if not v:return None
+    try: return datetime.date.fromisoformat(v)
+    except ValueError:raise HTTPException(422,'Неправильна дата')
+
 
 
 def valid_user(data):
@@ -43,37 +68,64 @@ def me(x_telegram_init_data:str=Header(default='')):
     uid=valid_user(x_telegram_init_data)
     role=adb.role(uid)
     if not role: raise HTTPException(403)
-    return {'id':uid,'role':role}
+    return {'id':uid,'role':role,'bot_username':os.getenv('BOT_USERNAME','TestRezar_bot').lstrip('@')}
 
 @app.get('/api/stats')
-def stats(x_telegram_init_data:str=Header(default='')):
+def stats(start:str='',end:str='',x_telegram_init_data:str=Header(default='')):
     require(x_telegram_init_data,'stats')
+    _valid_date(start);_valid_date(end)
+    if start and end and start>end:raise HTTPException(422,'Дата початку більша за дату завершення')
     with adb.connection() as c:
-        totals={}
-        for k,q in {'users':'SELECT COUNT(*) FROM people','phones':'SELECT COUNT(*) FROM people WHERE phone IS NOT NULL AND phone != ""','completed_quizzes':'SELECT COUNT(*) FROM quiz_sessions WHERE completed=1','crm_errors':'SELECT COUNT(*) FROM mini_crm_issues WHERE status="pending"','broadcasts':'SELECT COUNT(*) FROM mini_broadcasts'}.items():
-            try:totals[k]=c.execute(q).fetchone()[0]
-            except Exception:totals[k]=0
-    return totals
+        def val(sql,*params): return c.execute(sql,params).fetchone()[0]
+        filter_sql=''
+        args=[]
+        if start:filter_sql+=' AND date(first_start)>=?';args.append(start)
+        if end:filter_sql+=' AND date(first_start)<=?';args.append(end)
+        data={
+          'users':val('SELECT COUNT(*) FROM people'),
+          'new_today':val('SELECT COUNT(*) FROM people WHERE date(first_start)=date("now")'),
+          'new_period':val('SELECT COUNT(*) FROM people WHERE 1=1'+filter_sql,*args),
+          'phones':val('SELECT COUNT(*) FROM people WHERE phone IS NOT NULL AND trim(phone)!=""'),
+          'completed_quizzes':val('SELECT COUNT(*) FROM quiz_sessions WHERE completed=1'),
+          'crm_sent':val('SELECT COUNT(*) FROM people WHERE crm_sent=1'),
+          'crm_errors':val("SELECT COUNT(*) FROM mini_crm_issues WHERE status IN ('pending','retry_requested')"),
+          'broadcasts':val('SELECT COUNT(*) FROM mini_broadcasts'),
+          'events':val('SELECT COUNT(*) FROM mini_events'),
+        }
+    return data
 
 @app.get('/api/users')
 def users(q:str='',x_telegram_init_data:str=Header(default='')):
     require(x_telegram_init_data,'users')
+    q=q.strip()[:100]
     with adb.connection() as c:
-        rows=c.execute('SELECT telegram_id,car,year,budget,phone,completed,source,view FROM people WHERE CAST(telegram_id AS TEXT) LIKE ? OR COALESCE(phone, "") LIKE ? ORDER BY telegram_id DESC LIMIT 200',('%'+q+'%','%'+q+'%')).fetchall()
+        rows=c.execute("""SELECT telegram_id,username,first_name,first_start,last_activity,
+          car,year,budget,phone,completed,source,first_source,crm_sent,crm_lead_id
+          FROM people WHERE CAST(telegram_id AS TEXT) LIKE ? OR
+          COALESCE(phone,'') LIKE ? OR COALESCE(username,'') LIKE ? OR
+          COALESCE(first_name,'') LIKE ? ORDER BY COALESCE(last_activity,first_start) DESC LIMIT 200""",
+          tuple('%'+q+'%' for _ in range(4))).fetchall()
     return [dict(r) for r in rows]
 
 @app.get('/api/csv')
 def export_csv(start:str='',end:str='',kind:str='all',x_telegram_init_data:str=Header(default='')):
     require(x_telegram_init_data,'users')
-    # Legacy DB has no creation timestamp, so cannot honestly apply a date filter yet.
-    if start or end:raise HTTPException(422,'Date filtering requires user creation timestamps in PostgreSQL')
-    q='SELECT telegram_id,car,year,budget,phone,completed,source FROM people'
-    if kind=='phones':q+=' WHERE phone IS NOT NULL AND phone != ""'
-    elif kind=='completed':q+=' WHERE completed=1'
-    elif kind!='all':raise HTTPException(400,'Invalid export type')
-    with adb.connection() as c: rows=[dict(x) for x in c.execute(q)]
-    s=io.StringIO(); w=csv.DictWriter(s,fieldnames=['telegram_id','car','year','budget','phone','completed','source']);w.writeheader();w.writerows(rows)
-    return StreamingResponse(iter([s.getvalue().encode('utf-8-sig')]),media_type='text/csv',headers={'Content-Disposition':'attachment; filename="rezar-export.csv"'})
+    _valid_date(start);_valid_date(end)
+    if start and end and start>end:raise HTTPException(422,'Неправильний період')
+    if kind not in ('all','phones','completed','crm_sent'):raise HTTPException(422,'Invalid export type')
+    terms=['1=1'];args=[]
+    if start:terms.append('date(first_start)>=?');args.append(start)
+    if end:terms.append('date(first_start)<=?');args.append(end)
+    if kind=='phones':terms.append("phone IS NOT NULL AND trim(phone)!=''")
+    elif kind=='completed':terms.append('completed=1')
+    elif kind=='crm_sent':terms.append('crm_sent=1')
+    cols=['telegram_id','username','first_name','first_start','last_activity','first_source','last_source',
+          'phone','phone_received_at','completed','car','year','budget','crm_sent','crm_lead_id','crm_sent_at']
+    with adb.connection() as c:
+        rows=[dict(r) for r in c.execute('SELECT '+','.join(cols)+' FROM people WHERE '+' AND '.join(terms),args)]
+    s=io.StringIO();w=csv.DictWriter(s,fieldnames=cols);w.writeheader();w.writerows(rows)
+    return StreamingResponse(iter([s.getvalue().encode('utf-8-sig')]),media_type='text/csv',
+        headers={'Content-Disposition':'attachment; filename="rezar-users.csv"'})
 
 class Content(BaseModel):
     key:str=Field(pattern=r'^[a-z][a-z0-9_]{0,45}$')
@@ -85,14 +137,19 @@ class Content(BaseModel):
 def content_list(x_telegram_init_data:str=Header(default='')):
     require(x_telegram_init_data,'content')
     data={x['key']:x for x in adb.list_content()}
-    default_keys=('home','pick','calc','manager','access1','access2','access3','korea1','korea2','korea3','korea4','bonus','auctions','dealers','quiz_ready')
-    for key in default_keys:
-        data.setdefault(key,{'key':key,'body':'','media_file_id':'','buttons_json':'[]'})
-    return list(data.values())
+    result=[]
+    for key,label in SCREEN_NAMES.items():
+        override=data.get(key)
+        result.append({'key':key,'label':label,'body':override['body'] if override else SCREEN_DEFAULTS[key],
+           'media_file_id':override['media_file_id'] if override else '',
+           'buttons_json':override['buttons_json'] if override else '[]',
+           'customized':bool(override)})
+    return result
 
 @app.put('/api/content')
 def content_save(item:Content,x_telegram_init_data:str=Header(default='')):
     require(x_telegram_init_data,'content')
+    if item.key not in SCREEN_NAMES:raise HTTPException(422,'Unknown screen')
     try:
         buttons=json.loads(item.buttons_json)
         if not isinstance(buttons,list) or len(buttons)>20:raise ValueError()
@@ -101,6 +158,13 @@ def content_save(item:Content,x_telegram_init_data:str=Header(default='')):
     except (ValueError,TypeError):raise HTTPException(422,'Buttons must be a list of {text,callback}')
     with adb.connection() as c:
         c.execute('INSERT INTO mini_content(key,body,media_file_id,buttons_json) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET body=excluded.body,media_file_id=excluded.media_file_id,buttons_json=excluded.buttons_json,updated_at=CURRENT_TIMESTAMP',(item.key,item.body,item.media_file_id,item.buttons_json))
+    return {'ok':True}
+
+@app.delete('/api/content/{key}')
+def content_reset(key:str,x_telegram_init_data:str=Header(default='')):
+    require(x_telegram_init_data,'content')
+    if key not in SCREEN_NAMES:raise HTTPException(404,'Unknown screen')
+    with adb.connection() as c:c.execute('DELETE FROM mini_content WHERE key=?',(key,))
     return {'ok':True}
 
 class Label(BaseModel):
@@ -155,10 +219,8 @@ def issues(x_telegram_init_data:str=Header(default='')):
 @app.post('/api/issues/{issue_id}/retry')
 def retry_issue(issue_id:int,x_telegram_init_data:str=Header(default='')):
     require(x_telegram_init_data,'users')
-    # Do not mark as sent; actual CRM worker needs to consume the retry request.
-    with adb.connection() as c:
-        c.execute('UPDATE mini_crm_issues SET status="retry_requested",updated_at=CURRENT_TIMESTAMP WHERE id=?',(issue_id,))
-    return {'ok':True,'note':'Requires connected KeyCRM worker'}
+    # A retry must not pretend to work until a CRM delivery worker exists.
+    raise HTTPException(409,'KeyCRM worker not connected: retry unavailable')
 
 class Publication(BaseModel):
     body:str=Field(max_length=4000)
@@ -185,3 +247,42 @@ def queue_publication(pub_id:int,x_telegram_init_data:str=Header(default='')):
         c.execute('INSERT OR IGNORE INTO mini_delivery(broadcast_id,recipient) SELECT ?,telegram_id FROM people',(pub_id,))
         c.execute('UPDATE mini_broadcasts SET state="queued" WHERE id=?',(pub_id,))
     return {'ok':True}
+
+
+@app.post('/api/media/upload')
+async def media_upload(file: UploadFile=File(...),x_telegram_init_data:str=Header(default='')):
+    uid=require(x_telegram_init_data,'content')
+    if file.content_type not in ('image/jpeg','image/png'):
+        raise HTTPException(422,'Дозволені лише JPG та PNG')
+    payload=await file.read(8*1024*1024+1)
+    if len(payload)>8*1024*1024:raise HTTPException(413,'Фото завелике (до 8 MB)')
+    if not (payload.startswith(b'\xff\xd8') or payload.startswith(b'\x89PNG\r\n\x1a\n')):
+        raise HTTPException(422,'Невірний формат фото')
+    import httpx
+    token=os.getenv('BOT_TOKEN','').strip()
+    if not token:raise HTTPException(503,'BOT_TOKEN не налаштовано')
+    try:
+        async with httpx.AsyncClient(timeout=35) as client:
+            r=await client.post(f'https://api.telegram.org/bot{token}/sendPhoto',
+                data={'chat_id':str(uid),'disable_notification':'true'},
+                files={'photo':(file.filename or 'photo.jpg',payload,file.content_type)})
+            result=r.json()
+        if not result.get('ok'):
+            raise HTTPException(502,'Telegram не прийняв фото. Відкрийте чат із ботом.')
+        photos=result['result'].get('photo') or []
+        if not photos:raise HTTPException(502,'Telegram не повернув фото')
+        return {'file_id':photos[-1]['file_id']}
+    except (httpx.RequestError,ValueError,KeyError) as exc:
+        raise HTTPException(502,'Помилка завантаження в Telegram') from None
+
+@app.get('/api/integrations')
+def integration_list(x_telegram_init_data:str=Header(default='')):
+    require(x_telegram_init_data,'stats')
+    with adb.connection() as c:
+        pending=[dict(r) for r in c.execute("SELECT channel,COUNT(*) AS pending FROM mini_outbox WHERE status='pending' GROUP BY channel")]
+    return {'providers':integrations.report(),'queue':pending}
+
+@app.get('/api/events')
+def event_list(x_telegram_init_data:str=Header(default='')):
+    require(x_telegram_init_data,'stats')
+    with adb.connection() as c:return [dict(r) for r in c.execute('SELECT id,telegram_id,event_name,source_code,created_at FROM mini_events ORDER BY id DESC LIMIT 50')]

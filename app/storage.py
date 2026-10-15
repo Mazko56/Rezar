@@ -51,6 +51,20 @@ def _conn():
         credential_key TEXT PRIMARY KEY,
         credential_value TEXT NOT NULL
     )""")
+    # Add metadata without removing any data from existing Railway volumes.
+    columns={r['name'] for r in conn.execute('PRAGMA table_info(people)')}
+    upgrades={
+      'username':'TEXT','first_name':'TEXT','language_code':'TEXT',
+      'first_start':'TEXT','last_activity':'TEXT','first_source':'TEXT',
+      'last_source':'TEXT','start_param':'TEXT','phone_received_at':'TEXT',
+      'crm_sent':'INTEGER NOT NULL DEFAULT 0','crm_lead_id':'TEXT','crm_sent_at':'TEXT'
+    }
+    for name, sqltype in upgrades.items():
+        if name not in columns:
+            conn.execute(f'ALTER TABLE people ADD COLUMN {name} {sqltype}')
+    quiz_columns={r['name'] for r in conn.execute('PRAGMA table_info(quiz_sessions)')}
+    if 'submission_seq' not in quiz_columns:
+        conn.execute('ALTER TABLE quiz_sessions ADD COLUMN submission_seq INTEGER NOT NULL DEFAULT 0')
     conn.commit()
     try:
         yield conn
@@ -116,7 +130,7 @@ def begin_quiz(telegram_id: int, origin: str) -> dict:
     with _conn() as c:
         if previous["completed"] or previous["stage"] == "done":
             c.execute("""UPDATE quiz_sessions SET stage='car', car=NULL, year=NULL,
-                budget=NULL, contact_method=NULL, completed=0
+                budget=NULL, contact_method=NULL, completed=0, submission_seq=submission_seq+1
                 WHERE telegram_id=? AND origin=?""", (telegram_id, origin))
         c.execute("UPDATE people SET view='quiz', source=? WHERE telegram_id=?", (origin, telegram_id))
     return read_quiz(telegram_id, origin)
@@ -217,3 +231,23 @@ def get_auction_credential(key: str) -> str:
 
 def get_admin_action(telegram_id: int) -> str | None:
     return get_admin_pending(telegram_id)
+
+
+def record_user(user, *, start_param=None):
+    # Upsert profile without resetting the original source.
+    from datetime import datetime, timezone
+    now=datetime.now(timezone.utc).isoformat()
+    tid=user.id
+    source=(start_param or '').strip() or None
+    read(tid)
+    with _conn() as c:
+        c.execute('UPDATE people SET username=?,first_name=?,language_code=?, '
+                  'first_start=COALESCE(first_start,?),last_activity=?, '
+                  'first_source=COALESCE(first_source,?),last_source=COALESCE(?,last_source), '
+                  'start_param=COALESCE(?,start_param) WHERE telegram_id=?',
+          (user.username,user.first_name,user.language_code,now,now,source,source,source,tid))
+
+
+def mark_phone_received(tid):
+    with _conn() as c:
+        c.execute('UPDATE people SET phone_received_at=COALESCE(phone_received_at,CURRENT_TIMESTAMP) WHERE telegram_id=?',(tid,))
