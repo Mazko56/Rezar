@@ -25,7 +25,7 @@ WRITE_MANAGER = "💬 написати менеджеру"
 WHY_REZAR = "🇰🇷 Чому саме Rezar?"
 
 ACTIONS = ["до 15 тис.", "15–20 тис.", "20–30 тис.",
-           "30–40 тис.", "40+ тис.", "безліміт"]
+           "30–40 тис.", "40–50 тис.", "50+ тис."]
 
 
 def r(rows, *, placeholder=None):
@@ -67,7 +67,7 @@ def contact_kb():
 
 
 def preferred_kb():
-    return r([[CHAT, CALL]])
+    return i([[(CHAT, "preferred:chat"), (CALL, "preferred:call")]])
 
 
 def after_kb():
@@ -79,7 +79,7 @@ def repeat_access_buttons():
 
 
 def after_access_buttons():
-    return i([[(AUCTIONS, "open:auctions"), (DEALERS, "open:dealers")]])
+    return i([[(AUCTIONS, "open:auctions")], [(DEALERS, "open:dealers")]])
 
 
 def access_nav_kb():

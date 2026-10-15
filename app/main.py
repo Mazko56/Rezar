@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import BotCommandScopeDefault, BotCommandScopeChat
 from aiogram.filters import Command, CommandStart
-from aiogram.types import CallbackQuery, FSInputFile, Message, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions
+from aiogram.types import CallbackQuery, FSInputFile, Message, InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, ReplyKeyboardRemove
 
 from . import content, keyboards as kb, storage
 from .config import get_settings
@@ -138,6 +138,12 @@ async def start(message: Message):
     await message.answer(content.HOME_MENU, reply_markup=kb.main_kb())
 
 
+async def ask_preferred(message: Message):
+    # Remove old reply keyboard and attach inline choices to the SAME visible message.
+    sent = await message.answer(content.PREFERRED_CONTACT, reply_markup=ReplyKeyboardRemove())
+    await sent.edit_reply_markup(reply_markup=kb.preferred_kb())
+
+
 async def quiz_question(message: Message, user_id: int, origin: str):
     q = storage.read_quiz(user_id, origin)
     stage = q["stage"]
@@ -151,11 +157,11 @@ async def quiz_question(message: Message, user_id: int, origin: str):
     elif stage == "contact":
         if p["phone"]:
             storage.update_quiz(user_id, origin, stage="preferred")
-            await message.answer(content.PREFERRED_CONTACT, reply_markup=kb.preferred_kb())
+            await ask_preferred(message)
         else:
             await send_screen(message, content.QUIZ_READY, photo="quiz_ready", reply_markup=kb.contact_kb())
     elif stage == "preferred":
-        await message.answer(content.PREFERRED_CONTACT, reply_markup=kb.preferred_kb())
+        await ask_preferred(message)
 
 
 async def begin_quiz(message: Message, user_id: int, origin: str, *, actor=None):
@@ -196,8 +202,8 @@ async def show_auctions(message: Message, user_id: int):
         "glovis_id": "GLOVIS_LOGIN", "glovis_pw": "GLOVIS_PASSWORD",
     }
     await send_screen(message, content.AUCTIONS.format(**{
-        key: storage.get_auction_credential(env) for key, env in keys.items()
-    }), photo="auctions", reply_markup=kb.after_kb(), disable_preview=True)
+        key: html.escape(storage.get_auction_credential(env)) for key, env in keys.items()
+    }), photo="auctions", reply_markup=kb.after_kb(), parse_mode="HTML", disable_preview=True)
 
 
 async def show_dealers(message: Message, user_id: int):
@@ -255,7 +261,7 @@ async def show_korea(message: Message, user_id: int, page: int, *, entering: boo
     if entering or old_view != "korea":
         await set_section_keyboard(message, kb.KOREA, kb.korea_nav_kb())
     return await send_screen(
-        message, screen_html(text), photo=f"korea{page}",
+        message, ("<b>" + text.split("\n", 1)[0] + "</b>" + "\n" + text.split("\n", 1)[1] if page == 2 else screen_html(text)), photo=f"korea{page}",
         reply_markup=kb.korea_step_kb(page), parse_mode="HTML",
     )
 
@@ -367,7 +373,7 @@ async def handle_contact(message: Message):
         q = storage.read_quiz(user_id, origin)
         if q["stage"] in ("contact", "preferred"):
             storage.update_quiz(user_id, origin, stage="preferred")
-            await message.answer(content.PREFERRED_CONTACT, reply_markup=kb.preferred_kb())
+            await ask_preferred(message)
 
 
 def admin_menu_markup():
@@ -528,6 +534,25 @@ async def main():
     @dp.message(F.contact)
     async def on_contact(message: Message):
         await handle_contact(message)
+
+    @dp.callback_query(F.data.startswith("preferred:"))
+    async def on_preferred(q: CallbackQuery):
+        await q.answer()
+        uid = q.from_user.id
+        p = storage.read(uid)
+        if p["view"] != "quiz" or p["source"] not in storage.ORIGINS:
+            return
+        origin = p["source"]
+        draft = storage.read_quiz(uid, origin)
+        if draft["stage"] != "preferred":
+            return
+        choice = kb.CHAT if q.data.endswith(":chat") else kb.CALL if q.data.endswith(":call") else None
+        if not choice:
+            return
+        storage.update_quiz(uid, origin, contact_method=choice)
+        storage.complete_quiz(uid, origin)
+        storage.update(uid, view="result")
+        await send_quiz_result(q.message)
 
     @dp.callback_query(F.data.startswith("budget:"))
     async def on_budget(q: CallbackQuery):
